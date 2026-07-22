@@ -141,6 +141,36 @@ def test_main_build_from_sql_calls_adapter_and_emits_success(monkeypatch, capsys
     assert out.strip().endswith(result.SENTINEL_END)
 
 
+def test_main_uses_node_id_env_when_set(monkeypatch, capsys):
+    """The structured block's unique_id echoes NODE_ID when the executor sets it."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "build_from_sql")
+    monkeypatch.setenv("NODE_ID", "model.svc.orders_v2")
+    fake = FakeWarehouseAdapter()
+    _install_fake_adapter(monkeypatch, fake)
+    monkeypatch.setattr(runner, "load_candidate_sql", lambda: "SELECT 1 AS id")
+
+    runner.main()
+
+    out = capsys.readouterr().out
+    assert '"unique_id":"model.svc.orders_v2"' in out
+
+
+def test_main_falls_back_to_model_table_when_node_id_unset(monkeypatch, capsys):
+    """Without NODE_ID, unique_id falls back to model.<table> for compatibility."""
+    _set_common_env(monkeypatch)
+    monkeypatch.delenv("NODE_ID", raising=False)
+    monkeypatch.setenv("VALIDATION_OP", "build_from_sql")
+    fake = FakeWarehouseAdapter()
+    _install_fake_adapter(monkeypatch, fake)
+    monkeypatch.setattr(runner, "load_candidate_sql", lambda: "SELECT 1 AS id")
+
+    runner.main()
+
+    out = capsys.readouterr().out
+    assert '"unique_id":"model.orders"' in out
+
+
 def test_main_build_from_sql_empty_candidate_sql_errors(monkeypatch, capsys):
     """Exit 2 when candidate SQL is empty."""
     _set_common_env(monkeypatch)
@@ -186,14 +216,29 @@ def test_main_clone_from_prod_calls_adapter(monkeypatch, capsys):
     assert '"status":"success"' in capsys.readouterr().out
 
 
-def test_main_clone_from_prod_missing_prod_schema_exits(monkeypatch):
-    """Exit 2 when PROD_SCHEMA is missing."""
+def test_main_clone_from_prod_missing_prod_schema_exits(monkeypatch, capsys):
+    """Exit 2 when PROD_SCHEMA is missing, with a structured error block."""
     _set_common_env(monkeypatch)
     monkeypatch.setenv("VALIDATION_OP", "clone_from_prod")
     monkeypatch.delenv("PROD_SCHEMA", raising=False)
     with pytest.raises(SystemExit) as exc:
         runner.main()
     assert exc.value.code == 2
+    out = capsys.readouterr().out
+    assert result.SENTINEL_BEGIN in out
+    assert "missing required env var PROD_SCHEMA" in out
+
+
+def test_main_missing_dbt_target_schema_exits_2_with_block(monkeypatch, capsys):
+    """Exit 2 when DBT_TARGET_SCHEMA is missing, with a structured error block."""
+    monkeypatch.delenv("DBT_TARGET_SCHEMA", raising=False)
+    monkeypatch.setenv("TABLE_NAME", "orders")
+    with pytest.raises(SystemExit) as exc:
+        runner.main()
+    assert exc.value.code == 2
+    out = capsys.readouterr().out
+    assert result.SENTINEL_BEGIN in out
+    assert "missing required env var DBT_TARGET_SCHEMA" in out
 
 
 def test_main_unknown_validation_op_exits_2(monkeypatch, capsys):
@@ -306,6 +351,19 @@ def _setup_missing_required_env(monkeypatch):
     _install_fake_adapter(monkeypatch, fake, required=["DBT_POSTGRES_HOST"])
 
 
+def _setup_missing_dbt_target_schema(monkeypatch):
+    """Arrange a run missing the required DBT_TARGET_SCHEMA env var."""
+    monkeypatch.delenv("DBT_TARGET_SCHEMA", raising=False)
+    monkeypatch.setenv("TABLE_NAME", "orders")
+
+
+def _setup_missing_prod_schema(monkeypatch):
+    """Arrange a clone_from_prod run missing the required PROD_SCHEMA env var."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "clone_from_prod")
+    monkeypatch.delenv("PROD_SCHEMA", raising=False)
+
+
 # (setup, expected SystemExit code, or None when main() returns normally)
 _SENTINEL_SCENARIOS = [
     ("success", _setup_success, None),
@@ -314,6 +372,8 @@ _SENTINEL_SCENARIOS = [
     ("unknown_op", _setup_unknown_op, 2),
     ("discovery_failure", _setup_discovery_failure, 2),
     ("missing_required_env", _setup_missing_required_env, 2),
+    ("missing_dbt_target_schema", _setup_missing_dbt_target_schema, 2),
+    ("missing_prod_schema", _setup_missing_prod_schema, 2),
 ]
 
 
@@ -321,11 +381,12 @@ def test_main_emits_exactly_one_sentinel_block_as_last_stdout_line(monkeypatch, 
     """Every block-emitting exit path prints exactly one sentinel block, block-last.
 
     The contract (see ``result.py``) is: exactly ONE sentinel-framed block, as the
-    terminal non-empty stdout line, on every outcome that emits one. Exercises all six
-    block-emitting paths through ``main()`` — success, empty candidate SQL, S3-fetch
-    error, unknown VALIDATION_OP, adapter discovery failure, and missing required
-    adapter env — each in its own isolated monkeypatch context so scenarios cannot
-    leak patches into one another.
+    terminal non-empty stdout line, on every outcome that emits one. Exercises all
+    eight block-emitting paths through ``main()`` — success, empty candidate SQL,
+    S3-fetch error, unknown VALIDATION_OP, adapter discovery failure, missing
+    required adapter env, missing DBT_TARGET_SCHEMA, and missing PROD_SCHEMA — each
+    in its own isolated monkeypatch context so scenarios cannot leak patches into
+    one another.
     """
     for name, setup, expected_exit in _SENTINEL_SCENARIOS:
         with monkeypatch.context() as mp:

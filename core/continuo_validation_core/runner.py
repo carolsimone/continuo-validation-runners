@@ -26,6 +26,13 @@ def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
         logger.error("missing required env var %s", name)
+        print(
+            result.result_block(
+                "error", f"missing required env var {name}",
+                unique_id=os.environ.get("NODE_ID", ""),
+            ),
+            flush=True,
+        )
         sys.exit(2)
     return value
 
@@ -55,7 +62,7 @@ def main() -> None:
     schema = _require("DBT_TARGET_SCHEMA")
     table = _require("TABLE_NAME")
     op = os.environ.get("VALIDATION_OP", "build_from_sql")
-    unique_id = f"model.{table}"
+    unique_id = os.environ.get("NODE_ID") or f"model.{table}"
 
     # Gather op-specific inputs BEFORE touching the adapter, surfacing input errors
     # as a structured block (preserves the prior contract + exit codes).
@@ -111,15 +118,19 @@ def main() -> None:
         else:
             assert prod_schema is not None, "prod_schema must be set for clone_from_prod"
             adapter.clone_empty_from_prod(schema, prod_schema, table)
-        logger.info("built %s.%s (empty, op=%s, engine=%s)", schema, table, op, engine)
-        print(result.result_block("success", unique_id=unique_id), flush=True)
+        adapter.close()
     except Exception as exc:
         logger.error("ERROR building %s.%s: %s", schema, table, exc)
+        if adapter is not None:
+            try:
+                adapter.close()
+            except Exception as close_exc:  # already failing; keep the primary error
+                logger.error("adapter close failed: %s", close_exc)
         print(result.result_block("error", str(exc), unique_id=unique_id), flush=True)
         sys.exit(1)
-    finally:
-        if adapter is not None:
-            adapter.close()
+
+    logger.info("built %s.%s (empty, op=%s, engine=%s)", schema, table, op, engine)
+    print(result.result_block("success", unique_id=unique_id), flush=True)
 
 
 if __name__ == "__main__":

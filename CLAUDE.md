@@ -29,3 +29,6 @@ Consequently: **stdout is reserved exclusively for that one block.**
   `docker-compose.integration.yml` running) and `image` (needs the locally built
   runner image plus the integration stack). Default runs (`-m "not integration and
   not image"`) need neither.
+- Adapter DDL behavior (schema creation, table builds, clones) is verified against
+  live engines in the `integration`-marked tests, not mocked connections/cursors.
+  Do not add mock-DB unit tests for DDL behavior.

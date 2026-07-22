@@ -17,11 +17,13 @@ def _run(env: dict) -> subprocess.CompletedProcess:
 
 
 @pytest.mark.image
-def test_no_env_exits_2_like_prior_image():
-    """Verify missing DBT_TARGET_SCHEMA produces correct error."""
+def test_no_env_exits_2_with_structured_block():
+    """Verify missing DBT_TARGET_SCHEMA exits 2, logs to stderr, and emits a block."""
     proc = _run({})
     assert proc.returncode == 2
     assert "missing required env var DBT_TARGET_SCHEMA" in proc.stderr
+    assert result.SENTINEL_BEGIN in proc.stdout
+    assert "missing required env var DBT_TARGET_SCHEMA" in proc.stdout
 
 
 @pytest.mark.image

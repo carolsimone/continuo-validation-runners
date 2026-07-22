@@ -27,7 +27,6 @@ dev = [
 test = [
     "pytest==9.0.3",
     "pytest-cov==4.1.0",
-    "sqlglot==30.13.0",
 ]
 
 [tool.uv.sources]

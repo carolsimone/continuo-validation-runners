@@ -41,18 +41,21 @@ def require_env(name: str, *, caller: str) -> str:
 
 
 def make_s3_client() -> Any:
-    """Construct a boto3 S3 client from the four standard env vars.
+    """Construct a boto3 S3 client, letting boto3 resolve credentials itself.
 
-    Reads ``S3_ENDPOINT_URL``, ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``,
-    and ``AWS_DEFAULT_REGION``. All four are optional at the env level; boto3
-    applies its own credential resolution chain for any that are absent.
+    Only ``S3_ENDPOINT_URL`` (when set and non-empty, e.g. for MinIO) is passed
+    explicitly. Credentials and region are left for boto3's own chain, which
+    natively reads ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``,
+    ``AWS_SESSION_TOKEN``, and ``AWS_DEFAULT_REGION`` from the environment, and
+    falls through to IAM roles / web identity / instance profiles when those are
+    absent. Passing raw (possibly blank or missing) env values as explicit
+    keyword args would instead select empty/explicit credentials or drop
+    temporary-credential session tokens, breaking that chain.
 
     Tests patch ``s3.boto3`` to intercept the underlying ``client`` call.
     """
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ.get("S3_ENDPOINT_URL"),
-        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.environ.get("AWS_DEFAULT_REGION"),
-    )
+    kwargs: dict[str, Any] = {}
+    endpoint_url = os.environ.get("S3_ENDPOINT_URL")
+    if endpoint_url:
+        kwargs["endpoint_url"] = endpoint_url
+    return boto3.client("s3", **kwargs)

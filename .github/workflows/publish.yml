@@ -24,17 +24,23 @@ jobs:
           docker buildx build --platform linux/arm64 --load \
             -t validation-runner-postgres:arm64-smoke -f adapters/postgres/Dockerfile .
           set +e
-          docker run --rm --platform linux/arm64 validation-runner-postgres:arm64-smoke \
-            2>/tmp/arm64-smoke-stderr.txt
+          docker run --rm --platform linux/arm64 \
+            -e DBT_TARGET_SCHEMA=_smoke -e TABLE_NAME=t -e VALIDATION_OP=clone_from_prod \
+            -e PROD_SCHEMA=analytics \
+            validation-runner-postgres:arm64-smoke \
+            >/tmp/arm64-smoke-output.txt 2>&1
           status=$?
           set -e
-          cat /tmp/arm64-smoke-stderr.txt >&2
+          cat /tmp/arm64-smoke-output.txt
           if [ "$status" -ne 2 ]; then
             echo "arm64 smoke: expected exit code 2, got $status" >&2
             exit 1
           fi
-          if ! grep -q "missing required env var DBT_TARGET_SCHEMA" /tmp/arm64-smoke-stderr.txt; then
-            echo "arm64 smoke: stderr did not contain the expected missing-env message" >&2
+          # Reaching the missing-adapter-env structured error requires discovery to
+          # have imported continuo_validation_postgres (and its psycopg2 native
+          # arm64 extension) successfully, so this proves the adapter loaded.
+          if ! grep -q "DBT_POSTGRES_HOST" /tmp/arm64-smoke-output.txt; then
+            echo "arm64 smoke: output did not contain the expected missing-adapter-env message" >&2
             exit 1
           fi
 
@@ -45,6 +51,12 @@ jobs:
       - run: uv run pytest adapters/postgres/tests -m "not integration and not image" -v
       - run: docker build -t validation-runner-postgres:dev -f adapters/postgres/Dockerfile .
       - run: uv run pytest adapters/postgres/tests/test_image_smoke.py -m image -v
+
+      # Live gate: the tag must also pass the full postgres+MinIO integration and
+      # image e2e suites before anything is pushed, not just the mocked unit tier.
+      - run: docker compose -p validation-runners-it -f docker-compose.integration.yml up -d --wait
+      - run: uv run pytest adapters/postgres/tests -m integration -v
+      - run: uv run pytest adapters/postgres/tests -m image -v
 
       - uses: docker/login-action@v3
         with:
