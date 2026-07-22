@@ -22,6 +22,17 @@ from continuo_validation_core.port import AdapterDiscoveryError, discover_adapte
 logger = logging.getLogger("validation_runner")
 
 
+def _node_id() -> str:
+    """Best-known node identity for a result block: ``NODE_ID`` env, else ``""``.
+
+    The single source of NODE_ID resolution shared by every block-emitting path.
+    ``main`` layers a ``model.{table}`` fallback on top once TABLE_NAME is known;
+    the early ``_require`` failures (which may be the missing TABLE_NAME itself)
+    cannot, so they fall back to this bare value.
+    """
+    return os.environ.get("NODE_ID", "")
+
+
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -29,7 +40,7 @@ def _require(name: str) -> str:
         print(
             result.result_block(
                 "error", f"missing required env var {name}",
-                unique_id=os.environ.get("NODE_ID", ""),
+                unique_id=_node_id(),
             ),
             flush=True,
         )
@@ -62,7 +73,7 @@ def main() -> None:
     schema = _require("DBT_TARGET_SCHEMA")
     table = _require("TABLE_NAME")
     op = os.environ.get("VALIDATION_OP", "build_from_sql")
-    unique_id = os.environ.get("NODE_ID") or f"model.{table}"
+    unique_id = _node_id() or f"model.{table}"
 
     # Gather op-specific inputs BEFORE touching the adapter, surfacing input errors
     # as a structured block (preserves the prior contract + exit codes).
@@ -108,6 +119,10 @@ def main() -> None:
         print(result.result_block("error", msg, unique_id=unique_id), flush=True)
         sys.exit(2)
 
+    # close() runs exactly once, in the finally, on every path: the success case,
+    # the build error (sys.exit raises SystemExit, which still unwinds finally), and
+    # a from_env() failure (adapter stays None). A close() failure only logs — the
+    # primary error, if any, is already the SystemExit propagating through.
     adapter = None
     try:
         adapter = adapter_cls.from_env()
@@ -118,16 +133,16 @@ def main() -> None:
         else:
             assert prod_schema is not None, "prod_schema must be set for clone_from_prod"
             adapter.clone_empty_from_prod(schema, prod_schema, table)
-        adapter.close()
     except Exception as exc:
         logger.error("ERROR building %s.%s: %s", schema, table, exc)
+        print(result.result_block("error", str(exc), unique_id=unique_id), flush=True)
+        sys.exit(1)
+    finally:
         if adapter is not None:
             try:
                 adapter.close()
-            except Exception as close_exc:  # already failing; keep the primary error
+            except Exception as close_exc:  # never mask the primary outcome
                 logger.error("adapter close failed: %s", close_exc)
-        print(result.result_block("error", str(exc), unique_id=unique_id), flush=True)
-        sys.exit(1)
 
     logger.info("built %s.%s (empty, op=%s, engine=%s)", schema, table, op, engine)
     print(result.result_block("success", unique_id=unique_id), flush=True)

@@ -1,7 +1,10 @@
 """S3 helpers for the validation runner.
 
-Provides URI parsing, env-var validation, and S3 client construction used by
-validation_runner.py when fetching the candidate SQL from CANDIDATE_SQL_URI.
+``parse_s3_uri`` and ``make_s3_client`` back the runner's candidate-SQL fetch
+from ``CANDIDATE_SQL_URI``. ``require_env`` is the plain (non-block-emitting)
+env-var guard for helper entry points such as the compile uploader; the runner
+itself does NOT use it — it needs to emit a structured ``result_block`` on a
+missing var, so ``runner._require`` is its own block-emitting variant.
 """
 import logging
 import os
@@ -27,11 +30,12 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
 
 
 def require_env(name: str, *, caller: str) -> str:
-    """Return the value of env var *name*, or print an error and exit with code 2.
+    """Return the value of env var *name*, or log an error and exit with code 2.
 
-    *caller* is prepended to the error message so the originating script is
-    identifiable in pod logs (e.g. ``"validation_runner"`` or
-    ``"compile_uploader"``).
+    The plain guard for helper entry points (e.g. the compile uploader) that fail
+    with a log line and an exit code but no ``result_block``. *caller* names the
+    logger so the originating script is identifiable in pod logs. The runner does
+    not call this — see the module docstring and ``runner._require``.
     """
     value = os.environ.get(name)
     if not value:
