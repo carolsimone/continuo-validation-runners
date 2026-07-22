@@ -1,0 +1,43 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --all-groups
+      - run: uv run ruff check core adapters
+      - run: uv run mypy core/continuo_validation_core adapters/postgres/continuo_validation_postgres
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --all-groups
+      - run: uv run pytest core/tests -v
+      - run: uv run pytest adapters/postgres/tests -m "not integration and not image" -v
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --all-groups
+      - run: docker compose -p validation-runners-it -f docker-compose.integration.yml up -d --wait
+      - run: uv run pytest adapters/postgres/tests -m integration -v
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --all-groups
+      - run: docker build -t validation-runner-postgres:dev -f adapters/postgres/Dockerfile .
+      - run: docker compose -p validation-runners-it -f docker-compose.integration.yml up -d --wait
+      - run: uv run pytest adapters/postgres/tests -m image -v
