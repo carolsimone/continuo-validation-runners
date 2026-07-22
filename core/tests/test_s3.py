@@ -16,10 +16,10 @@ def test_parse_s3_uri_rejects_invalid(uri):
         s3.parse_s3_uri(uri)
 
 
-def test_require_env_exits_2_when_missing(monkeypatch, capsys):
-    """A missing required env var exits with code 2 and names itself on stderr."""
+def test_require_env_exits_2_when_missing(monkeypatch, caplog):
+    """A missing required env var exits with code 2 and names itself in the log."""
     monkeypatch.delenv("SOME_VAR", raising=False)
     with pytest.raises(SystemExit) as exc:
         s3.require_env("SOME_VAR", caller="validation_runner")
     assert exc.value.code == 2
-    assert "SOME_VAR" in capsys.readouterr().err
+    assert "SOME_VAR" in caplog.text

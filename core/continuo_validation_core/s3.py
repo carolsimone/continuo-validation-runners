@@ -3,6 +3,7 @@
 Provides URI parsing, env-var validation, and S3 client construction used by
 validation_runner.py when fetching the candidate SQL from CANDIDATE_SQL_URI.
 """
+import logging
 import os
 import sys
 
@@ -34,7 +35,7 @@ def require_env(name: str, *, caller: str) -> str:
     """
     value = os.environ.get(name)
     if not value:
-        print(f"{caller}: missing required env var {name}", file=sys.stderr)
+        logging.getLogger(caller).error("missing required env var %s", name)
         sys.exit(2)
     return value
 

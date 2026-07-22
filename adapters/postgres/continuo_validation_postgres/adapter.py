@@ -5,6 +5,7 @@ DDL matches the prior continuo-internal validation-runner exactly: empty builds 
 schema creation serialized on a session advisory lock because parallel root
 validation nodes race on ``CREATE SCHEMA``.
 """
+import logging
 import os
 
 import psycopg2
@@ -13,6 +14,8 @@ from psycopg2 import errors as pg_errors
 from psycopg2 import sql as pg_sql
 
 from continuo_validation_core.port import WarehouseAdapter
+
+logger = logging.getLogger("continuo_validation_postgres")
 
 
 class PostgresAdapter(WarehouseAdapter):
@@ -50,13 +53,12 @@ class PostgresAdapter(WarehouseAdapter):
                 stmt = pg_sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(
                     pg_sql.Identifier(schema)
                 )
-                print(f"-- ensuring candidate schema {schema} exists", flush=True)
+                logger.info("ensuring candidate schema %s exists", schema)
                 try:
                     cur.execute(stmt)
                 except (pg_errors.DuplicateSchema, pg_errors.UniqueViolation):
-                    print(
-                        f"-- schema {schema} already exists (concurrent create); continuing",
-                        flush=True,
+                    logger.info(
+                        "schema %s already exists (concurrent create); continuing", schema
                     )
             finally:
                 cur.execute("SELECT pg_advisory_unlock(hashtext(%s))", (schema,))

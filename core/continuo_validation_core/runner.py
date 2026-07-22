@@ -8,20 +8,24 @@ Dispatches on ``VALIDATION_OP`` env var (default ``build_from_sql``):
 
 The engine adapter is discovered from the single installed
 ``continuo_validation.adapters`` entry point — each runner image installs exactly one.
-stdout is the per-node validation log; the runner prints exactly one structured
-``result_block`` as its last line. A non-zero exit marks the node failed.
+stdout is reserved exclusively for the runner's one structured ``result_block``,
+printed as its last line; all diagnostics go to stderr via the ``logging`` module.
+A non-zero exit marks the node failed.
 """
+import logging
 import os
 import sys
 
 from continuo_validation_core import result, s3
 from continuo_validation_core.port import AdapterDiscoveryError, discover_adapter
 
+logger = logging.getLogger("validation_runner")
+
 
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
-        print(f"validation_runner: missing required env var {name}", file=sys.stderr)
+        logger.error("missing required env var %s", name)
         sys.exit(2)
     return value
 
@@ -45,6 +49,9 @@ def load_candidate_sql() -> str:
 
 def main() -> None:
     """Run one validation node end to end; exits non-zero on failure."""
+    logging.basicConfig(
+        level=logging.INFO, stream=sys.stderr, format="%(levelname)s %(name)s: %(message)s"
+    )
     schema = _require("DBT_TARGET_SCHEMA")
     table = _require("TABLE_NAME")
     op = os.environ.get("VALIDATION_OP", "build_from_sql")
@@ -59,13 +66,14 @@ def main() -> None:
             raw_sql = load_candidate_sql()
         except Exception as exc:
             uri = os.environ.get("CANDIDATE_SQL_URI", "")
-            print(f"validation_runner: ERROR fetching candidate SQL from {uri!r}: {exc}",
-                  file=sys.stderr)
+            logger.error("ERROR fetching candidate SQL from %r: %s", uri, exc)
             print(result.result_block("error", str(exc), unique_id=unique_id), flush=True)
             sys.exit(1)
         if not raw_sql:
-            print("validation_runner: CANDIDATE_SQL_URI is unset or the object is empty for a "
-                  "build_from_sql node; cannot validate", file=sys.stderr)
+            logger.error(
+                "CANDIDATE_SQL_URI is unset or the object is empty for a "
+                "build_from_sql node; cannot validate"
+            )
             print(result.result_block("error", "CANDIDATE_SQL_URI is unset or empty",
                                       unique_id=unique_id), flush=True)
             sys.exit(2)
@@ -73,7 +81,7 @@ def main() -> None:
     elif op == "clone_from_prod":
         prod_schema = _require("PROD_SCHEMA")
     else:
-        print(f"validation_runner: unknown VALIDATION_OP {op!r}", file=sys.stderr)
+        logger.error("unknown VALIDATION_OP %r", op)
         print(result.result_block("error", f"unknown VALIDATION_OP {op!r}",
                                   unique_id=unique_id), flush=True)
         sys.exit(2)
@@ -82,14 +90,14 @@ def main() -> None:
     try:
         engine, adapter_cls = discover_adapter()
     except AdapterDiscoveryError as exc:
-        print(f"validation_runner: {exc}", file=sys.stderr)
+        logger.error("%s", exc)
         print(result.result_block("error", str(exc), unique_id=unique_id), flush=True)
         sys.exit(2)
 
     missing = [v for v in adapter_cls.required_env() if not os.environ.get(v)]
     if missing:
         msg = f"missing required env for engine {engine!r}: {', '.join(missing)}"
-        print(f"validation_runner: {msg}", file=sys.stderr)
+        logger.error("%s", msg)
         print(result.result_block("error", msg, unique_id=unique_id), flush=True)
         sys.exit(2)
 
@@ -103,11 +111,10 @@ def main() -> None:
         else:
             assert prod_schema is not None, "prod_schema must be set for clone_from_prod"
             adapter.clone_empty_from_prod(schema, prod_schema, table)
-        print(f"validation_runner: built {schema}.{table} (empty, op={op}, engine={engine})",
-              flush=True)
+        logger.info("built %s.%s (empty, op=%s, engine=%s)", schema, table, op, engine)
         print(result.result_block("success", unique_id=unique_id), flush=True)
     except Exception as exc:
-        print(f"validation_runner: ERROR building {schema}.{table}: {exc}", file=sys.stderr)
+        logger.error("ERROR building %s.%s: %s", schema, table, exc)
         print(result.result_block("error", str(exc), unique_id=unique_id), flush=True)
         sys.exit(1)
     finally:

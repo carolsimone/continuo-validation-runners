@@ -30,9 +30,9 @@ image installing core + your package (see `adapters/postgres/Dockerfile`). Core
 enumerates installed entry points at startup and requires exactly one.
 
 stdout is a parsed channel: the runner prints one sentinel-framed result block as
-its last stdout line. Your adapter may print diagnostics to stdout, but must never
-emit the `===CONTINUO_VALIDATION_RESULT_BEGIN/END===` marker strings, and must
-never write to stdout after the runner's final block.
+its last stdout line. Your adapter must log diagnostics with the stdlib `logging`
+module (captured from the pod log), never print or otherwise write to stdout, and
+must never emit the `===CONTINUO_VALIDATION_RESULT_BEGIN/END===` marker strings.
 
 ## Development
 
