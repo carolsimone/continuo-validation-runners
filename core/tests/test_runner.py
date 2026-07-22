@@ -1,0 +1,247 @@
+"""Unit tests for the runner — hand-written fakes, no live DB or S3."""
+import pytest
+
+from continuo_validation_core import result, runner
+from continuo_validation_core.port import AdapterDiscoveryError, WarehouseAdapter
+
+
+class FakeWarehouseAdapter(WarehouseAdapter):
+    """Records every adapter call; no live DB required."""
+
+    def __init__(self):
+        self.schemas_ensured = []
+        self.builds = []    # list of (schema, table, sql)
+        self.clones = []    # list of (candidate_schema, prod_schema, table)
+        self.closed = False
+
+    @classmethod
+    def required_env(cls) -> list[str]:
+        """Return required environment variables."""
+        return []
+
+    @classmethod
+    def from_env(cls) -> "FakeWarehouseAdapter":
+        """Create adapter from environment."""
+        return cls()
+
+    def ensure_schema(self, schema: str) -> None:
+        """Record schema ensure call."""
+        self.schemas_ensured.append(schema)
+
+    def build_empty_from_sql(self, schema: str, table: str, compiled_sql: str) -> None:
+        """Record build call."""
+        self.builds.append((schema, table, compiled_sql))
+
+    def clone_empty_from_prod(self, candidate_schema: str, prod_schema: str, table: str) -> None:
+        """Record clone call."""
+        self.clones.append((candidate_schema, prod_schema, table))
+
+    def close(self) -> None:
+        """Record close call."""
+        self.closed = True
+
+
+def _install_fake_adapter(monkeypatch, adapter, required=()):
+    """Patch discovery to return a plugin class wrapping *adapter*."""
+
+    class _Plugin:
+        @staticmethod
+        def required_env() -> list[str]:
+            return list(required)
+
+        @staticmethod
+        def from_env() -> WarehouseAdapter:
+            return adapter
+
+    monkeypatch.setattr(runner, "discover_adapter", lambda: ("fake", _Plugin))
+
+
+class _FakeBody:
+    """Mimics the S3 streaming body returned inside get_object()["Body"]."""
+
+    def __init__(self, data: bytes) -> None:
+        """Store data."""
+        self._data = data
+
+    def read(self) -> bytes:
+        """Return stored data."""
+        return self._data
+
+
+class FakeS3Client:
+    """Returns pre-loaded bytes for known (bucket, key) pairs; records calls made."""
+
+    def __init__(self, objects: dict):
+        """Initialize with object mapping."""
+        self._objects = objects
+        self.calls = []
+
+    def get_object(self, *, Bucket: str, Key: str) -> dict:
+        """Retrieve object or raise."""
+        self.calls.append({"Bucket": Bucket, "Key": Key})
+        data = self._objects.get((Bucket, Key))
+        if data is None:
+            raise RuntimeError(f"FakeS3Client: unknown key s3://{Bucket}/{Key}")
+        return {"Body": _FakeBody(data)}
+
+
+def _set_common_env(monkeypatch):
+    """Set common environment variables."""
+    monkeypatch.setenv("DBT_TARGET_SCHEMA", "_candidate_relA")
+    monkeypatch.setenv("TABLE_NAME", "orders")
+
+
+# --------------------------------------------------------------------------
+# load_candidate_sql
+# --------------------------------------------------------------------------
+
+def test_load_candidate_sql_empty_when_uri_unset(monkeypatch):
+    """Return empty string when CANDIDATE_SQL_URI is unset."""
+    monkeypatch.delenv("CANDIDATE_SQL_URI", raising=False)
+    assert runner.load_candidate_sql() == ""
+
+
+def test_load_candidate_sql_fetches_and_decodes_utf8(monkeypatch):
+    """Fetch and decode UTF-8 SQL from S3."""
+    fake_s3 = FakeS3Client({("continuo", "candidate-sql/rel-1/svc.orders.sql"): b"  select 2  \n"})
+    monkeypatch.setenv("CANDIDATE_SQL_URI", "s3://continuo/candidate-sql/rel-1/svc.orders.sql")
+    monkeypatch.setattr(runner.s3, "make_s3_client", lambda: fake_s3)
+    assert runner.load_candidate_sql() == "  select 2  \n"
+    assert fake_s3.calls == [{"Bucket": "continuo", "Key": "candidate-sql/rel-1/svc.orders.sql"}]
+
+
+def test_load_candidate_sql_raises_on_bad_uri(monkeypatch):
+    """Raise ValueError on invalid S3 URI."""
+    monkeypatch.setenv("CANDIDATE_SQL_URI", "not-an-s3-uri")
+    with pytest.raises(ValueError):
+        runner.load_candidate_sql()
+
+
+# --------------------------------------------------------------------------
+# main — build_from_sql / clone_from_prod / unknown op (ported behaviors)
+# --------------------------------------------------------------------------
+
+def test_main_build_from_sql_calls_adapter_and_emits_success(monkeypatch, capsys):
+    """Build from SQL and emit success block."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "build_from_sql")
+    fake = FakeWarehouseAdapter()
+    _install_fake_adapter(monkeypatch, fake)
+    monkeypatch.setattr(runner, "load_candidate_sql", lambda: "SELECT 1 AS id")
+
+    runner.main()
+
+    assert fake.schemas_ensured == ["_candidate_relA"]
+    assert fake.builds == [("_candidate_relA", "orders", "SELECT 1 AS id")]
+    assert fake.clones == []
+    assert fake.closed is True
+    out = capsys.readouterr().out
+    assert result.SENTINEL_BEGIN in out
+    assert '"status":"success"' in out
+    assert out.strip().endswith(result.SENTINEL_END)
+
+
+def test_main_build_from_sql_empty_candidate_sql_errors(monkeypatch, capsys):
+    """Exit 2 when candidate SQL is empty."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "build_from_sql")
+    monkeypatch.setattr(runner, "load_candidate_sql", lambda: "")
+    with pytest.raises(SystemExit) as exc:
+        runner.main()
+    assert exc.value.code == 2
+    assert '"status":"error"' in capsys.readouterr().out
+
+
+def test_main_build_from_sql_s3_error_emits_error_block(monkeypatch, capsys):
+    """Exit 1 on S3 fetch error."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "build_from_sql")
+
+    def _raise():
+        raise RuntimeError("S3 down")
+
+    monkeypatch.setattr(runner, "load_candidate_sql", _raise)
+    with pytest.raises(SystemExit) as exc:
+        runner.main()
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert result.SENTINEL_BEGIN in out
+    assert '"status":"error"' in out
+
+
+def test_main_clone_from_prod_calls_adapter(monkeypatch, capsys):
+    """Clone from prod and emit success block."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "clone_from_prod")
+    monkeypatch.setenv("PROD_SCHEMA", "analytics")
+    fake = FakeWarehouseAdapter()
+    _install_fake_adapter(monkeypatch, fake)
+
+    runner.main()
+
+    assert fake.schemas_ensured == ["_candidate_relA"]
+    assert fake.clones == [("_candidate_relA", "analytics", "orders")]
+    assert fake.builds == []
+    assert fake.closed is True
+    assert '"status":"success"' in capsys.readouterr().out
+
+
+def test_main_clone_from_prod_missing_prod_schema_exits(monkeypatch):
+    """Exit 2 when PROD_SCHEMA is missing."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "clone_from_prod")
+    monkeypatch.delenv("PROD_SCHEMA", raising=False)
+    with pytest.raises(SystemExit) as exc:
+        runner.main()
+    assert exc.value.code == 2
+
+
+def test_main_unknown_validation_op_exits_2(monkeypatch, capsys):
+    """Exit 2 on unknown VALIDATION_OP."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "bogus")
+    with pytest.raises(SystemExit) as exc:
+        runner.main()
+    assert exc.value.code == 2
+    out = capsys.readouterr().out
+    assert result.SENTINEL_BEGIN in out
+    assert '"status":"error"' in out
+
+
+# --------------------------------------------------------------------------
+# main — NEW behaviors: discovery failure, missing required adapter env
+# --------------------------------------------------------------------------
+
+def test_main_discovery_failure_exits_2_with_error_block(monkeypatch, capsys):
+    """Exit 2 on adapter discovery failure."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "clone_from_prod")
+    monkeypatch.setenv("PROD_SCHEMA", "analytics")
+
+    def _fail():
+        raise AdapterDiscoveryError("no warehouse adapter installed")
+
+    monkeypatch.setattr(runner, "discover_adapter", _fail)
+    with pytest.raises(SystemExit) as exc:
+        runner.main()
+    assert exc.value.code == 2
+    out = capsys.readouterr().out
+    assert result.SENTINEL_BEGIN in out
+    assert "no warehouse adapter installed" in out
+
+
+def test_main_missing_required_env_exits_2_naming_vars(monkeypatch, capsys):
+    """Exit 2 when adapter required env vars are missing."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "clone_from_prod")
+    monkeypatch.setenv("PROD_SCHEMA", "analytics")
+    monkeypatch.delenv("DBT_POSTGRES_HOST", raising=False)
+    fake = FakeWarehouseAdapter()
+    _install_fake_adapter(monkeypatch, fake, required=["DBT_POSTGRES_HOST"])
+    with pytest.raises(SystemExit) as exc:
+        runner.main()
+    assert exc.value.code == 2
+    out = capsys.readouterr().out
+    assert "DBT_POSTGRES_HOST" in out
+    assert '"status":"error"' in out
+    assert fake.closed is False  # never connected
