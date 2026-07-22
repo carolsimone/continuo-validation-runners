@@ -1,0 +1,76 @@
+name: publish
+on:
+  push:
+    tags: ["postgres-v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-postgres:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # arm64 smoke: the multi-platform push below is otherwise the first time an
+      # arm64 image ever runs. Build+load it locally under QEMU and confirm it fails
+      # the same structural way (exit 2, missing-env message) as the tested host-arch
+      # image, before anything gets pushed.
+      - name: arm64 smoke
+        run: |
+          docker buildx build --platform linux/arm64 --load \
+            -t validation-runner-postgres:arm64-smoke -f adapters/postgres/Dockerfile .
+          set +e
+          docker run --rm --platform linux/arm64 \
+            -e DBT_TARGET_SCHEMA=_smoke -e TABLE_NAME=t -e VALIDATION_OP=clone_from_prod \
+            -e PROD_SCHEMA=analytics \
+            validation-runner-postgres:arm64-smoke \
+            >/tmp/arm64-smoke-output.txt 2>&1
+          status=$?
+          set -e
+          cat /tmp/arm64-smoke-output.txt
+          if [ "$status" -ne 2 ]; then
+            echo "arm64 smoke: expected exit code 2, got $status" >&2
+            exit 1
+          fi
+          # Reaching the missing-adapter-env structured error requires discovery to
+          # have imported continuo_validation_postgres (and its psycopg2 native
+          # arm64 extension) successfully, so this proves the adapter loaded.
+          if ! grep -q "DBT_POSTGRES_HOST" /tmp/arm64-smoke-output.txt; then
+            echo "arm64 smoke: output did not contain the expected missing-adapter-env message" >&2
+            exit 1
+          fi
+
+      # Test gate: a tag on a red commit must never publish an image or move :latest.
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --all-groups
+      - run: uv run pytest core/tests -v
+      - run: uv run pytest adapters/postgres/tests -m "not integration and not image" -v
+      - run: docker build -t validation-runner-postgres:dev -f adapters/postgres/Dockerfile .
+      - run: uv run pytest adapters/postgres/tests/test_image_smoke.py -m image -v
+
+      # Live gate: the tag must also pass the full postgres+MinIO integration and
+      # image e2e suites before anything is pushed, not just the mocked unit tier.
+      - run: docker compose -p validation-runners-it -f docker-compose.integration.yml up -d --wait
+      - run: uv run pytest adapters/postgres/tests -m integration -v
+      - run: uv run pytest adapters/postgres/tests -m image -v
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#postgres-v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: adapters/postgres/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/carolsimone/validation-runner-postgres:${{ steps.version.outputs.version }}
+            ghcr.io/carolsimone/validation-runner-postgres:latest

@@ -4,7 +4,7 @@
 members = ["core", "adapters/*"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -42,7 +42,11 @@ exclude_lines = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--tb=short"
+# importlib import-mode: core/tests and adapters/*/tests are each their own
+# `tests` package (both carry __init__.py); the default "prepend" mode collides
+# on that shared name whenever both are collected in one run. importlib mode
+# keys modules by file path instead, so per-package `tests` dirs stay distinct.
+addopts = "--tb=short --import-mode=importlib"
 markers = [
     "integration: needs the docker-compose.integration.yml stack running",
     "image: needs the locally built validation-runner image and the integration stack",
