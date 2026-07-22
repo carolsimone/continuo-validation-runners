@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Runner image = core + exactly ONE adapter package. Engine selection happens here,
 # at build time — there is no engine env var; the entry point IS the selection.

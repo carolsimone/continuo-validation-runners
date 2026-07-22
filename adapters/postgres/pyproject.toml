@@ -5,7 +5,7 @@ description = "Postgres warehouse adapter for the continuo validation runner."
 authors = [{ name = "Simone Carolini" }]
 maintainers = [{ name = "Simone Carolini" }]
 readme = "README.md"
-requires-python = ">= 3.12"
+requires-python = ">= 3.14"
 dependencies = [
     "continuo-validation-core",
     "psycopg2-binary==2.9.11",
@@ -13,7 +13,7 @@ dependencies = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.entry-points."continuo_validation.adapters"]
