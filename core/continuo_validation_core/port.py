@@ -18,7 +18,14 @@ class AdapterDiscoveryError(Exception):
 
 
 class WarehouseAdapter(ABC):
-    """Port for engine-specific empty-table DDL during blue/green validation."""
+    """Port for engine-specific empty-table DDL during blue/green validation.
+
+    stdout is a parsed channel: the runner prints one sentinel-framed result block
+    (see ``result.py``) as its last stdout line. Adapters may print diagnostics to
+    stdout, but must never emit the ``===CONTINUO_VALIDATION_RESULT_BEGIN/END===``
+    marker strings themselves, and must never write to stdout after the runner has
+    printed its final block.
+    """
 
     @classmethod
     @abstractmethod

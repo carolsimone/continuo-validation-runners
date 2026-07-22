@@ -245,3 +245,100 @@ def test_main_missing_required_env_exits_2_naming_vars(monkeypatch, capsys):
     assert "DBT_POSTGRES_HOST" in out
     assert '"status":"error"' in out
     assert fake.closed is False  # never connected
+
+
+# --------------------------------------------------------------------------
+# main — sentinel-block invariant across every block-emitting exit path
+# --------------------------------------------------------------------------
+
+def _setup_success(monkeypatch):
+    """Arrange a build_from_sql run that reaches the success block."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "build_from_sql")
+    fake = FakeWarehouseAdapter()
+    _install_fake_adapter(monkeypatch, fake)
+    monkeypatch.setattr(runner, "load_candidate_sql", lambda: "SELECT 1 AS id")
+
+
+def _setup_empty_candidate_sql(monkeypatch):
+    """Arrange a build_from_sql run whose candidate SQL is empty."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "build_from_sql")
+    monkeypatch.setattr(runner, "load_candidate_sql", lambda: "")
+
+
+def _setup_s3_error(monkeypatch):
+    """Arrange a build_from_sql run whose S3 fetch raises."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "build_from_sql")
+
+    def _raise():
+        raise RuntimeError("S3 down")
+
+    monkeypatch.setattr(runner, "load_candidate_sql", _raise)
+
+
+def _setup_unknown_op(monkeypatch):
+    """Arrange a run with an unrecognized VALIDATION_OP."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "bogus")
+
+
+def _setup_discovery_failure(monkeypatch):
+    """Arrange a clone_from_prod run whose adapter discovery fails."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "clone_from_prod")
+    monkeypatch.setenv("PROD_SCHEMA", "analytics")
+
+    def _fail():
+        raise AdapterDiscoveryError("no warehouse adapter installed")
+
+    monkeypatch.setattr(runner, "discover_adapter", _fail)
+
+
+def _setup_missing_required_env(monkeypatch):
+    """Arrange a clone_from_prod run whose adapter is missing required env."""
+    _set_common_env(monkeypatch)
+    monkeypatch.setenv("VALIDATION_OP", "clone_from_prod")
+    monkeypatch.setenv("PROD_SCHEMA", "analytics")
+    monkeypatch.delenv("DBT_POSTGRES_HOST", raising=False)
+    fake = FakeWarehouseAdapter()
+    _install_fake_adapter(monkeypatch, fake, required=["DBT_POSTGRES_HOST"])
+
+
+# (setup, expected SystemExit code, or None when main() returns normally)
+_SENTINEL_SCENARIOS = [
+    ("success", _setup_success, None),
+    ("empty_candidate_sql", _setup_empty_candidate_sql, 2),
+    ("s3_error", _setup_s3_error, 1),
+    ("unknown_op", _setup_unknown_op, 2),
+    ("discovery_failure", _setup_discovery_failure, 2),
+    ("missing_required_env", _setup_missing_required_env, 2),
+]
+
+
+def test_main_emits_exactly_one_sentinel_block_as_last_stdout_line(monkeypatch, capsys):
+    """Every block-emitting exit path prints exactly one sentinel block, block-last.
+
+    The contract (see ``result.py``) is: exactly ONE sentinel-framed block, as the
+    terminal non-empty stdout line, on every outcome that emits one. Exercises all six
+    block-emitting paths through ``main()`` — success, empty candidate SQL, S3-fetch
+    error, unknown VALIDATION_OP, adapter discovery failure, and missing required
+    adapter env — each in its own isolated monkeypatch context so scenarios cannot
+    leak patches into one another.
+    """
+    for name, setup, expected_exit in _SENTINEL_SCENARIOS:
+        with monkeypatch.context() as mp:
+            setup(mp)
+            capsys.readouterr()  # drain output from any prior scenario
+            if expected_exit is None:
+                runner.main()
+            else:
+                with pytest.raises(SystemExit) as exc:
+                    runner.main()
+                assert exc.value.code == expected_exit, name
+
+            out = capsys.readouterr().out
+            assert out.count(result.SENTINEL_BEGIN) == 1, name
+            assert out.count(result.SENTINEL_END) == 1, name
+            assert out.strip().splitlines()[-1] == result.SENTINEL_END, name

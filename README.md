@@ -29,6 +29,11 @@ declares an entry point in group `continuo_validation.adapters`, then build an
 image installing core + your package (see `adapters/postgres/Dockerfile`). Core
 enumerates installed entry points at startup and requires exactly one.
 
+stdout is a parsed channel: the runner prints one sentinel-framed result block as
+its last stdout line. Your adapter may print diagnostics to stdout, but must never
+emit the `===CONTINUO_VALIDATION_RESULT_BEGIN/END===` marker strings, and must
+never write to stdout after the runner's final block.
+
 ## Development
 
 `uv sync --all-packages --all-groups`, then `uv run pytest core/tests
