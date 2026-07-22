@@ -135,10 +135,10 @@ def test_full_runner_end_to_end_via_minio(prod_table):
         "AWS_ACCESS_KEY_ID": "minioadmin",
         "AWS_SECRET_ACCESS_KEY": "minioadmin",
         "AWS_DEFAULT_REGION": "us-east-1",
-        "DBT_POSTGRES_HOST": "postgres",
-        "DBT_POSTGRES_DB": "warehouse",
-        "DBT_POSTGRES_USER": "continuo",
-        "DBT_POSTGRES_PASSWORD": "continuo",
+        "POSTGRES_HOST": "postgres",
+        "POSTGRES_DB": "warehouse",
+        "POSTGRES_USER": "continuo",
+        "POSTGRES_PASSWORD": "continuo",
     }
     args = ["docker", "run", "--rm", "--network", NETWORK]
     for k, v in env.items():

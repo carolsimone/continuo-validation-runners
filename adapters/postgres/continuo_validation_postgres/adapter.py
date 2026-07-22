@@ -28,17 +28,17 @@ class PostgresAdapter(WarehouseAdapter):
     @classmethod
     def required_env(cls) -> list[str]:
         """Vars that must be non-empty before connecting."""
-        return ["DBT_POSTGRES_HOST", "DBT_POSTGRES_DB", "DBT_POSTGRES_USER"]
+        return ["POSTGRES_HOST", "POSTGRES_DB", "POSTGRES_USER"]
 
     @classmethod
     def from_env(cls) -> "PostgresAdapter":
-        """Connect from DBT_POSTGRES_* env (port defaults 5432, password empty)."""
+        """Connect from POSTGRES_* env (port defaults 5432, password empty)."""
         conn = psycopg2.connect(
-            host=os.environ["DBT_POSTGRES_HOST"],
-            port=os.environ.get("DBT_POSTGRES_PORT", "5432"),
-            dbname=os.environ["DBT_POSTGRES_DB"],
-            user=os.environ["DBT_POSTGRES_USER"],
-            password=os.environ.get("DBT_POSTGRES_PASSWORD", ""),
+            host=os.environ["POSTGRES_HOST"],
+            port=os.environ.get("POSTGRES_PORT", "5432"),
+            dbname=os.environ["POSTGRES_DB"],
+            user=os.environ["POSTGRES_USER"],
+            password=os.environ.get("POSTGRES_PASSWORD", ""),
         )
         return cls(conn)
 

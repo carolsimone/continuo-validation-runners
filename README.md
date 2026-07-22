@@ -17,7 +17,7 @@ connection env (via the `validation.warehouseSecret` Kubernetes Secret).
 
 | Image | Required connection env | Optional env | Verification |
 |---|---|---|---|
-| `ghcr.io/carolsimone/validation-runner-postgres` | `DBT_POSTGRES_HOST`, `DBT_POSTGRES_DB`, `DBT_POSTGRES_USER` | `DBT_POSTGRES_PORT` (5432), `DBT_POSTGRES_PASSWORD` | live (postgres:16 in CI) |
+| `ghcr.io/carolsimone/validation-runner-postgres` | `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER` | `POSTGRES_PORT` (5432), `POSTGRES_PASSWORD` | live (postgres:16 in CI) |
 
 Snowflake, Redshift, BigQuery, Trino, Spark (Thrift), and Databricks adapters are
 planned; each will add a row here with its env contract and verification tier.

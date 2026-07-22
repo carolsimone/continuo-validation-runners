@@ -11,9 +11,9 @@ from continuo_validation_postgres.adapter import PostgresAdapter
 
 
 def test_required_env_names_connection_vars():
-    """Test that required_env lists the three mandatory DBT_POSTGRES_* vars."""
+    """Test that required_env lists the three mandatory POSTGRES_* vars."""
     assert PostgresAdapter.required_env() == [
-        "DBT_POSTGRES_HOST", "DBT_POSTGRES_DB", "DBT_POSTGRES_USER",
+        "POSTGRES_HOST", "POSTGRES_DB", "POSTGRES_USER",
     ]
 
 
