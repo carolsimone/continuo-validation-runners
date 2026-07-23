@@ -62,6 +62,15 @@ class PostgresAdapter(WarehouseAdapter):
             finally:
                 cur.execute("SELECT pg_advisory_unlock(hashtext(%s))", (schema,))
 
+    def drop_schema(self, schema: str) -> None:
+        """Idempotently drop *schema* and everything in it; no-op if absent."""
+        with self._conn.cursor() as cur:
+            stmt = pg_sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
+                pg_sql.Identifier(schema)
+            )
+            logger.info("dropping candidate schema %s", schema)
+            cur.execute(stmt)
+
     def build_empty_from_sql(self, schema: str, table: str, compiled_sql: str) -> None:
         """Create ``schema.table`` empty, shaped by the compiled SELECT."""
         # Strip any trailing terminator so the SELECT nests cleanly inside AS ( ... ).
