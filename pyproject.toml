@@ -2,7 +2,7 @@
 # folder (e.g. postgres/). Tool configuration is defined once here for the
 # whole monorepo.
 [tool.uv.workspace]
-members = ["postgres"]
+members = ["postgres", "trino"]
 
 # continuo-validation-contract is not on real PyPI yet (reshape pre-release), so it
 # is pulled from an EXPLICIT TestPyPI index scoped to that package only. Everything
@@ -45,7 +45,7 @@ indent-style = "space"
 
 [tool.ruff.lint.isort]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
-known-first-party = ["continuo_validation_postgres"]
+known-first-party = ["continuo_validation_postgres", "continuo_validation_trino"]
 lines-between-types = 1
 
 [tool.coverage.report]
