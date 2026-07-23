@@ -57,6 +57,15 @@ def _count(schema: str, table: str) -> int:
     return n
 
 
+def _schema_exists(schema: str) -> bool:
+    conn = _conn()
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name=%s", (schema,))
+        found = cur.fetchone() is not None
+    conn.close()
+    return found
+
+
 @pytest.mark.integration
 def test_build_empty_from_sql_live(prod_table):
     """Build an empty candidate table shaped by a compiled SELECT."""
@@ -88,6 +97,21 @@ def test_build_is_rerun_idempotent(prod_table):
         a.build_empty_from_sql("_candidate_it", "rerun", "SELECT id FROM prod_it.src_table")
     a.close()
     assert _count("_candidate_it", "rerun") == 0
+
+
+@pytest.mark.integration
+def test_drop_schema_removes_it_and_is_idempotent(prod_table):
+    """drop_schema deletes the schema and its tables; dropping again is a no-op."""
+    schema = f"_candidate_drop_{uuid.uuid4().hex[:8]}"
+    a = PostgresAdapter(_conn())
+    a.ensure_schema(schema)
+    a.build_empty_from_sql(schema, "t", "SELECT id FROM prod_it.src_table")
+    assert _schema_exists(schema)
+    a.drop_schema(schema)
+    assert not _schema_exists(schema)
+    a.drop_schema(schema)  # absent schema → no error
+    a.close()
+    assert not _schema_exists(schema)
 
 
 @pytest.mark.integration
