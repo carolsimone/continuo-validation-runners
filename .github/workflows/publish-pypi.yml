@@ -1,0 +1,37 @@
+name: publish-pypi
+on:
+  # PyPI (library) releases use the pypi-<library>-v* namespace, distinct from the
+  # retired whole-image <library>-v* tags that still exist in this repo's history.
+  push:
+    tags: ["pypi-postgres-v*"]
+permissions: {}
+jobs:
+  publish-postgres:
+    runs-on: ubuntu-latest
+    environment: ${{ contains(github.ref_name, '-test') && 'testpypi' || 'pypi' }}
+    permissions:
+      id-token: write   # OIDC for Trusted Publishing
+    # continuo-validation-contract resolves from the explicit, package-scoped TestPyPI
+    # index in the root pyproject (lockfile-pinned); real-PyPI wheels for everything
+    # else. No blanket extra-index env needed.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --all-groups
+      - run: uv run pytest postgres/tests -m "not integration" -v
+      - run: docker compose -p validation-runners-it -f docker-compose.integration.yml up -d --wait
+      - run: uv run pytest postgres/tests -m integration -v
+      - if: always()
+        run: docker compose -p validation-runners-it -f docker-compose.integration.yml down -v
+      - run: uv build --package continuo-validation-postgres postgres -o dist
+      - name: Publish to TestPyPI
+        if: contains(github.ref_name, '-test')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+      - name: Publish to PyPI
+        if: ${{ !contains(github.ref_name, '-test') }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
