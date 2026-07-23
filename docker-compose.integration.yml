@@ -60,7 +60,7 @@ services:
       - "18181:8181"
 
   trino:
-    image: trinodb/trino:latest
+    image: trinodb/trino:483
     profiles: ["trino"]
     depends_on:
       - iceberg-rest
@@ -69,7 +69,7 @@ services:
     ports:
       - "18080:8080"
     healthcheck:
-      test: ["CMD", "trino", "--execute", "SELECT 1"]
+      test: ["CMD", "trino", "--execute", "SHOW SCHEMAS FROM iceberg"]
       interval: 5s
       timeout: 10s
       retries: 60

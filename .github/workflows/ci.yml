@@ -18,6 +18,8 @@ jobs:
       - run: uv sync --all-packages --all-groups
       - run: uv run ruff check postgres
       - run: uv run mypy postgres/continuo_validation_postgres
+      - run: uv run ruff check trino
+      - run: uv run mypy trino/continuo_validation_trino
 
   unit:
     runs-on: ubuntu-latest
@@ -26,6 +28,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --all-packages --all-groups
       - run: uv run pytest postgres/tests -m "not integration" -v
+      - run: uv run pytest trino/tests -m "not integration" -v
 
   integration:
     runs-on: ubuntu-latest
@@ -37,3 +40,14 @@ jobs:
       - run: uv run pytest postgres/tests -m integration -v
       - if: always()
         run: docker compose -p validation-runners-it -f docker-compose.integration.yml down -v
+
+  integration-trino:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --all-groups
+      - run: docker compose -p validation-runners-it -f docker-compose.integration.yml --profile trino up -d --wait
+      - run: uv run pytest trino/tests -m integration -v
+      - if: always()
+        run: docker compose -p validation-runners-it -f docker-compose.integration.yml --profile trino down -v

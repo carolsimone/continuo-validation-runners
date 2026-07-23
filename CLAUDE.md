@@ -24,8 +24,10 @@ log by its `===CONTINUO_VALIDATION_RESULT_BEGIN/END===` markers. Consequently:
 
 ## Lint, type-check, and tests
 
-- Lint: `uv run ruff check postgres`
-- Type-check (strict): `uv run mypy postgres/continuo_validation_postgres`
+- Lint (per library): `uv run ruff check <lib>`, e.g. `uv run ruff check postgres`,
+  `uv run ruff check trino`
+- Type-check (strict, per library): `uv run mypy <lib>/continuo_validation_<lib>`,
+  e.g. `uv run mypy postgres/continuo_validation_postgres`
 - Tests are marked with the pytest marker `integration` (needs
   `docker-compose.integration.yml` running). Default runs (`-m "not
   integration"`) need it not running.
