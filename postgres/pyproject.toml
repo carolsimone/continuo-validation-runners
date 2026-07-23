@@ -1,5 +1,5 @@
 [project]
-version = "0.1.0"
+version = "0.1.1"
 name = "continuo-validation-postgres"
 description = "Postgres warehouse adapter for the continuo validation runner."
 authors = [{ name = "Simone Carolini" }]
@@ -7,7 +7,7 @@ maintainers = [{ name = "Simone Carolini" }]
 readme = "README.md"
 requires-python = ">= 3.14"
 dependencies = [
-    "continuo-validation-contract==0.1.0",
+    "continuo-validation-contract==0.1.1",
     "psycopg2-binary==2.9.11",
 ]
 classifiers = [
