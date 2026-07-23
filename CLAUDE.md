@@ -37,6 +37,8 @@ log by its `===CONTINUO_VALIDATION_RESULT_BEGIN/END===` markers. Consequently:
 
 `continuo_validation_contract` (the `WarehouseAdapter` port + result-block wire
 format) is a separate published package, pinned exactly (e.g.
-`continuo-validation-contract==0.1.0`) in each library's `pyproject.toml`. It
-currently resolves from TestPyPI (`UV_EXTRA_INDEX_URL=https://test.pypi.org/simple/`)
-until published to real PyPI — see the root `README.md`.
+`continuo-validation-contract==0.1.0`) in each library's `pyproject.toml`. Until it
+is on real PyPI it resolves from a **package-scoped** TestPyPI index declared in the
+root `pyproject.toml` (`[[tool.uv.index]]` + `[tool.uv.sources]`). Never export a
+global `UV_EXTRA_INDEX_URL` — a blanket TestPyPI index makes uv pull the sdist-only
+TestPyPI `psycopg2-binary`, which fails to compile on clean systems.

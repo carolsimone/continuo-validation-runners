@@ -1,7 +1,9 @@
 name: publish-pypi
 on:
+  # PyPI (library) releases use the pypi-<library>-v* namespace, distinct from the
+  # retired whole-image <library>-v* tags that still exist in this repo's history.
   push:
-    tags: ["postgres-v*"]
+    tags: ["pypi-postgres-v*"]
 permissions: {}
 jobs:
   publish-postgres:

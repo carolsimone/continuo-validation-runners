@@ -50,20 +50,20 @@ otherwise write to stdout, and must never emit the
 docker-compose.integration.yml up -d --wait`.
 
 The `continuo-validation-contract` dependency currently resolves from TestPyPI
-until it is published to real PyPI — set both env vars before `uv sync`/`uv
-run`:
-
-```bash
-export UV_EXTRA_INDEX_URL=https://test.pypi.org/simple/
-export UV_INDEX_STRATEGY=unsafe-best-match  # some dev tools also exist on TestPyPI
-```
+until it is published to real PyPI. This is handled by a **package-scoped** TestPyPI
+index in the root `pyproject.toml` (`[[tool.uv.index]]` + `[tool.uv.sources]`), so a
+plain `uv sync` / `uv lock` resolves the contract from TestPyPI while everything else
+(psycopg2-binary, boto3, tooling) keeps its real-PyPI wheels. Do **not** export a
+global `UV_EXTRA_INDEX_URL` — a blanket TestPyPI index makes uv pick the sdist-only
+TestPyPI build of `psycopg2-binary`, which then fails to compile on clean systems.
 
 ## Publishing
 
 Each library publishes independently via OIDC Trusted Publishing (no stored
-tokens) on a `<library>-v*` tag — see `.github/workflows/publish-pypi.yml`. Tag
-suffix `-test` (e.g. `postgres-v0.1.0-test1`) publishes to TestPyPI; otherwise
-to real PyPI.
+tokens) on a `pypi-<library>-v*` tag — see `.github/workflows/publish-pypi.yml`.
+Tag suffix `-test` (e.g. `pypi-postgres-v0.1.0-test1`) publishes to TestPyPI;
+otherwise to real PyPI. (This namespace is distinct from the retired whole-image
+`<library>-v*` tags still present in history.)
 
 ## License
 
