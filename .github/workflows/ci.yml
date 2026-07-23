@@ -4,16 +4,10 @@ on:
     branches: [main]
   pull_request:
 
-# Temporary until continuo-validation-contract is published to real PyPI: adds
-# TestPyPI as an extra index (alongside real PyPI) so the pin
-# continuo-validation-contract==0.1.0 resolves while psycopg2-binary/boto3/etc.
-# still come from real PyPI. unsafe-best-match is required because some dev
-# tools (e.g. mypy) also publish test releases on TestPyPI under the same
-# name; uv's default first-index-wins strategy would otherwise fail to find
-# the pinned mypy version once TestPyPI is added.
-env:
-  UV_EXTRA_INDEX_URL: https://test.pypi.org/simple/
-  UV_INDEX_STRATEGY: unsafe-best-match
+# continuo-validation-contract resolves from an EXPLICIT TestPyPI index scoped to
+# that one package (see the root pyproject's [tool.uv.index]/[tool.uv.sources]); the
+# lockfile pins it. Everything else keeps its real-PyPI wheels — no blanket
+# extra-index env is needed. Drop the pyproject block once the contract is on PyPI.
 
 jobs:
   lint:

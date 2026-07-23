@@ -9,14 +9,9 @@ jobs:
     environment: ${{ contains(github.ref_name, '-test') && 'testpypi' || 'pypi' }}
     permissions:
       id-token: write   # OIDC for Trusted Publishing
-    # Temporary until continuo-validation-contract is on real PyPI: adds
-    # TestPyPI as an extra index (alongside real PyPI) so the pin
-    # continuo-validation-contract==0.1.0 resolves during the build's sync.
-    # unsafe-best-match avoids uv's default first-index-wins strategy failing
-    # to find pinned dev-tool versions (e.g. mypy) that also exist on TestPyPI.
-    env:
-      UV_EXTRA_INDEX_URL: https://test.pypi.org/simple/
-      UV_INDEX_STRATEGY: unsafe-best-match
+    # continuo-validation-contract resolves from the explicit, package-scoped TestPyPI
+    # index in the root pyproject (lockfile-pinned); real-PyPI wheels for everything
+    # else. No blanket extra-index env needed.
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

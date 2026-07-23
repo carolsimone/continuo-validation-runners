@@ -4,6 +4,19 @@
 [tool.uv.workspace]
 members = ["postgres"]
 
+# continuo-validation-contract is not on real PyPI yet (reshape pre-release), so it
+# is pulled from an EXPLICIT TestPyPI index scoped to that package only. Everything
+# else (psycopg2-binary, boto3, sqlglot, tooling) resolves from real PyPI and keeps
+# its platform wheels — no blanket extra-index that would drag a sdist-only TestPyPI
+# copy of psycopg2-binary. Remove this block once the contract is on real PyPI.
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+explicit = true
+
+[tool.uv.sources]
+continuo-validation-contract = { index = "testpypi" }
+
 [tool.mypy]
 python_version = "3.14"
 warn_return_any = true
