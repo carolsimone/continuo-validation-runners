@@ -10,10 +10,9 @@ import os
 
 import psycopg2
 
+from continuo_validation_contract.port import WarehouseAdapter
 from psycopg2 import errors as pg_errors
 from psycopg2 import sql as pg_sql
-
-from continuo_validation_core.port import WarehouseAdapter
 
 logger = logging.getLogger("continuo_validation_postgres")
 

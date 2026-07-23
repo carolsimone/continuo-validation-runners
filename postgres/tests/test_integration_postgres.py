@@ -1,14 +1,11 @@
-"""Tier-2 live tests against postgres:16 + MinIO (docker-compose.integration.yml)."""
+"""Tier-2 live tests against postgres:16 (docker-compose.integration.yml)."""
 import concurrent.futures
 import os
-import subprocess
 import uuid
 
-import boto3
 import psycopg2
 import pytest
 
-from continuo_validation_core import result
 from continuo_validation_postgres.adapter import PostgresAdapter
 
 PG = dict(
@@ -18,9 +15,6 @@ PG = dict(
     user="continuo",
     password="continuo",
 )
-MINIO_ENDPOINT = os.environ.get("VR_IT_MINIO_ENDPOINT", "http://localhost:19000")
-IMAGE = os.environ.get("VALIDATION_IMAGE_UNDER_TEST", "validation-runner-postgres:dev")
-NETWORK = os.environ.get("VR_IT_NETWORK", "validation-runners-it_default")
 
 
 def _conn():
@@ -109,44 +103,3 @@ def test_ensure_schema_race_all_callers_succeed():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         assert all(f.result() for f in [ex.submit(_one) for _ in range(8)])
-
-
-@pytest.mark.image
-def test_full_runner_end_to_end_via_minio(prod_table):
-    """SQL in MinIO → run the real image on the compose network → empty table."""
-    s3c = boto3.client(
-        "s3", endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id="minioadmin", aws_secret_access_key="minioadmin",
-        region_name="us-east-1",
-    )
-    try:
-        s3c.create_bucket(Bucket="candidates")
-    except Exception:
-        pass  # already exists from a prior run
-    s3c.put_object(Bucket="candidates", Key="node.sql",
-                   Body=b"SELECT id, name FROM prod_it.src_table")
-
-    env = {
-        "DBT_TARGET_SCHEMA": "_candidate_it",
-        "TABLE_NAME": "from_runner",
-        "VALIDATION_OP": "build_from_sql",
-        "CANDIDATE_SQL_URI": "s3://candidates/node.sql",
-        "S3_ENDPOINT_URL": "http://minio:9000",
-        "AWS_ACCESS_KEY_ID": "minioadmin",
-        "AWS_SECRET_ACCESS_KEY": "minioadmin",
-        "AWS_DEFAULT_REGION": "us-east-1",
-        "POSTGRES_HOST": "postgres",
-        "POSTGRES_DB": "warehouse",
-        "POSTGRES_USER": "continuo",
-        "POSTGRES_PASSWORD": "continuo",
-    }
-    args = ["docker", "run", "--rm", "--network", NETWORK]
-    for k, v in env.items():
-        args += ["-e", f"{k}={v}"]
-    proc = subprocess.run(args + [IMAGE], capture_output=True, text=True, timeout=180)
-
-    assert proc.returncode == 0, proc.stderr
-    assert result.SENTINEL_BEGIN in proc.stdout
-    assert '"status":"success"' in proc.stdout
-    assert _count("_candidate_it", "from_runner") == 0
-    assert _columns("_candidate_it", "from_runner") == [("id", "integer"), ("name", "text")]

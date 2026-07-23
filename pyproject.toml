@@ -1,7 +1,8 @@
-# Virtual uv workspace root: no [project] — packages live in core/ and adapters/*.
-# Tool configuration is defined once here for the whole monorepo.
+# Virtual uv workspace root: no [project] — each engine library is a top-level
+# folder (e.g. postgres/). Tool configuration is defined once here for the
+# whole monorepo.
 [tool.uv.workspace]
-members = ["core", "adapters/*"]
+members = ["postgres"]
 
 [tool.mypy]
 python_version = "3.14"
@@ -31,7 +32,7 @@ indent-style = "space"
 
 [tool.ruff.lint.isort]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
-known-first-party = ["continuo_validation_core", "continuo_validation_postgres"]
+known-first-party = ["continuo_validation_postgres"]
 lines-between-types = 1
 
 [tool.coverage.report]
@@ -42,12 +43,12 @@ exclude_lines = [
 ]
 
 [tool.pytest.ini_options]
-# importlib import-mode: core/tests and adapters/*/tests are each their own
-# `tests` package (both carry __init__.py); the default "prepend" mode collides
-# on that shared name whenever both are collected in one run. importlib mode
-# keys modules by file path instead, so per-package `tests` dirs stay distinct.
+# importlib import-mode: each engine library's tests/ is its own `tests`
+# package (carries __init__.py); the default "prepend" mode would collide on
+# that shared name once a second library is added to the workspace. importlib
+# mode keys modules by file path instead, so per-package `tests` dirs stay
+# distinct.
 addopts = "--tb=short --import-mode=importlib"
 markers = [
     "integration: needs the docker-compose.integration.yml stack running",
-    "image: needs the locally built validation-runner image and the integration stack",
 ]
