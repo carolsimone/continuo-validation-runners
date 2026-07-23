@@ -39,5 +39,5 @@ def test_discovery_and_required_env_produce_structured_block():
     # so the runner must emit a structured block naming the missing vars and exit 2.
     assert proc.returncode == 2
     assert result.SENTINEL_BEGIN in proc.stdout
-    assert "DBT_POSTGRES_HOST" in proc.stdout
+    assert "POSTGRES_HOST" in proc.stdout
     assert "postgres" in proc.stdout

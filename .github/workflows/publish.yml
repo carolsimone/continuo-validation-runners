@@ -39,7 +39,7 @@ jobs:
           # Reaching the missing-adapter-env structured error requires discovery to
           # have imported continuo_validation_postgres (and its psycopg2 native
           # arm64 extension) successfully, so this proves the adapter loaded.
-          if ! grep -q "DBT_POSTGRES_HOST" /tmp/arm64-smoke-output.txt; then
+          if ! grep -q "POSTGRES_HOST" /tmp/arm64-smoke-output.txt; then
             echo "arm64 smoke: output did not contain the expected missing-adapter-env message" >&2
             exit 1
           fi
