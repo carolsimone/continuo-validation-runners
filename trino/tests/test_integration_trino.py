@@ -6,6 +6,8 @@ Run the stack first:
 import os
 import uuid
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from continuo_validation_trino.adapter import TrinoAdapter
@@ -147,3 +149,45 @@ def test_clone_empty_from_prod_live(candidate_schema, prod_table):
     ]
     assert _count(a, candidate_schema, "src_table") == 0
     a.close()
+
+
+@pytest.mark.integration
+def test_drop_schema_removes_schema_containing_views(candidate_schema):
+    """Trino's SHOW TABLES lists views too; drop_schema must remove them as well."""
+    a = _adapter()
+    a.ensure_schema(candidate_schema)
+    a._execute(
+        f'CREATE TABLE iceberg."{candidate_schema}"."base_t" AS SELECT 1 AS id WITH NO DATA'
+    )
+    a._execute(
+        f'CREATE VIEW iceberg."{candidate_schema}"."v_one" AS '
+        f'SELECT id FROM iceberg."{candidate_schema}"."base_t"'
+    )
+    a.drop_schema(candidate_schema)
+    assert not _schema_exists(a, candidate_schema)
+    a.close()
+
+
+@pytest.mark.integration
+def test_ensure_schema_concurrent_callers_all_succeed():
+    """Parallel root validation nodes race CREATE SCHEMA; every caller must succeed.
+
+    The Iceberg REST metastore can report the loser of the create race as a
+    query-level error rather than a user error; ensure_schema must treat any
+    outcome where the schema ends up existing as success.
+    """
+    for _ in range(4):
+        schema = f"_candidate_race_{uuid.uuid4().hex[:8]}"
+        adapters = [_adapter() for _ in range(8)]
+        try:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futures = [pool.submit(a.ensure_schema, schema) for a in adapters]
+                for future in futures:
+                    future.result()  # raises if any caller failed
+            assert _schema_exists(adapters[0], schema)
+        finally:
+            for a in adapters:
+                a.close()
+            cleanup = _adapter()
+            cleanup.drop_schema(schema)
+            cleanup.close()
