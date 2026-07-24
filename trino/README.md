@@ -20,4 +20,4 @@ needs to know about catalogs.
 | `TRINO_PASSWORD` | no | unset | Basic auth; requires `TRINO_HTTP_SCHEME=https` |
 
 The catalog must be backed by a connector that supports schema and table creation
-(Iceberg and Hive do). The library is tested live against Iceberg (REST catalog + S3).
+and `DROP SCHEMA ... CASCADE` (Iceberg and Hive do). The library is tested live against Iceberg (REST catalog + S3).

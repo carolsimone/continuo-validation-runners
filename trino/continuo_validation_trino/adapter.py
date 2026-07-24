@@ -78,38 +78,39 @@ class TrinoAdapter(WarehouseAdapter):
         finally:
             cur.close()
 
+    def _schema_exists(self, schema: str) -> bool:
+        rows = self._execute(f"SHOW SCHEMAS FROM {_quote(self._catalog)}")
+        return any(row[0] == schema for row in rows)
+
     def ensure_schema(self, schema: str) -> None:
         """Idempotently create *schema*; safe under concurrent callers."""
         logger.info("ensuring candidate schema %s.%s exists", self._catalog, schema)
         try:
             self._execute(f"CREATE SCHEMA IF NOT EXISTS {self._schema_ref(schema)}")
-        except trino.exceptions.TrinoUserError as exc:
-            # Trino has no advisory locks; a concurrent creator can still win the race
-            # between IF NOT EXISTS and the metastore write. The desired end state holds.
-            if "already exists" not in str(exc).lower():
+        except trino.exceptions.TrinoQueryError:
+            # IF NOT EXISTS does not close the race: with no advisory locks, a
+            # concurrent creator can win between Trino's existence check and the
+            # metastore write. The loser surfaces as a user error or — on the
+            # Iceberg REST catalog — as an INTERNAL_ERROR query failure, so the
+            # error's shape cannot be trusted; only the end state can. Re-raise
+            # only if the schema is genuinely absent.
+            if not self._schema_exists(schema):
                 raise
             logger.info("schema %s already exists (concurrent create); continuing", schema)
 
     def drop_schema(self, schema: str) -> None:
         """Idempotently drop *schema* and everything in it; no-op if absent.
 
-        Trino has no DROP SCHEMA ... CASCADE, so the schema's tables are dropped first.
+        DROP SCHEMA ... CASCADE removes the schema's tables and views in one
+        statement (the catalog's connector must support CASCADE — Iceberg and
+        Hive do).
         """
-        ref = self._schema_ref(schema)
-        try:
-            rows = self._execute(f"SHOW TABLES FROM {ref}")
-        except trino.exceptions.TrinoUserError as exc:
-            if "does not exist" not in str(exc).lower():
-                raise
-            logger.info("candidate schema %s absent; nothing to drop", schema)
-            return
-        logger.info("dropping candidate schema %s (%d tables)", schema, len(rows))
-        for row in rows:
-            self._execute(f"DROP TABLE IF EXISTS {self._table_ref(schema, row[0])}")
-        self._execute(f"DROP SCHEMA IF EXISTS {ref}")
+        logger.info("dropping candidate schema %s.%s", self._catalog, schema)
+        self._execute(f"DROP SCHEMA IF EXISTS {self._schema_ref(schema)} CASCADE")
 
     def build_empty_from_sql(self, schema: str, table: str, compiled_sql: str) -> None:
         """Create ``schema.table`` empty, shaped by the compiled SELECT."""
+        logger.info(f"⏳ building empty table: {table}")
         # Strip any trailing terminator so the SELECT nests cleanly inside AS ( ... ).
         inner = compiled_sql.strip().rstrip(";").strip()
         ref = self._table_ref(schema, table)
@@ -118,6 +119,7 @@ class TrinoAdapter(WarehouseAdapter):
 
     def clone_empty_from_prod(self, candidate_schema: str, prod_schema: str, table: str) -> None:
         """Create ``candidate_schema.table`` empty, shaped like ``prod_schema.table``."""
+        logger.info(f"⏳ cloning to candidate schema named: {candidate_schema} the production table: {prod_schema}.{table}")
         ref = self._table_ref(candidate_schema, table)
         self._execute(f"DROP TABLE IF EXISTS {ref}")
         self._execute(

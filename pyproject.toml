@@ -57,10 +57,14 @@ exclude_lines = [
 
 [tool.pytest.ini_options]
 # importlib import-mode: each engine library's tests/ is its own `tests`
-# package (carries __init__.py); the default "prepend" mode would collide on
-# that shared name once a second library is added to the workspace. importlib
-# mode keys modules by file path instead, so per-package `tests` dirs stay
-# distinct.
+# package (carries __init__.py). Even in importlib mode, two files with the
+# SAME basename in different `tests` packages resolve to one module name
+# (tests.<basename>) and the second silently collects the first's functions —
+# so every test module basename must be unique across libraries
+# (test_adapter_<lib>.py, test_integration_<lib>.py). Dropping the
+# __init__.py files instead is not an option: pytest's parent-module
+# insertion would then claim the top-level `trino/` directory name and
+# shadow the installed trino DBAPI package.
 addopts = "--tb=short --import-mode=importlib"
 markers = [
     "integration: needs the docker-compose.integration.yml stack running",

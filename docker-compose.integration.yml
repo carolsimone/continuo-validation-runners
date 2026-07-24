@@ -29,6 +29,8 @@ services:
       timeout: 2s
       retries: 30
 
+  # build trino infra using:
+  # docker compose -f docker-compose.integration.yml --profile trino up -d --wait
   createbuckets:
     image: minio/mc:latest
     profiles: ["trino"]
