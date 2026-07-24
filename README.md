@@ -23,8 +23,9 @@ Kubernetes Secret).
 | Library | Import package | Required connection env | Optional env | Verification |
 |---|---|---|---|---|
 | `continuo-validation-postgres` | `continuo_validation_postgres` | `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER` | `POSTGRES_PORT` (5432), `POSTGRES_PASSWORD` (empty) | live (postgres:16 in CI) |
+| `continuo-validation-trino` | `continuo_validation_trino` | `TRINO_HOST`, `TRINO_CATALOG` | `TRINO_PORT` (8080), `TRINO_USER` (continuo), `TRINO_HTTP_SCHEME` (http), `TRINO_PASSWORD` (unset) | live (Trino + Iceberg REST + MinIO in CI) |
 
-Snowflake, Redshift, BigQuery, Trino, Spark (Thrift), and Databricks adapters
+Snowflake, Redshift, BigQuery, Spark (Thrift), and Databricks adapters
 are planned; each will add a row here with its env contract and verification
 tier.
 
