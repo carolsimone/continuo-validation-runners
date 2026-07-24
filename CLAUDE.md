@@ -44,3 +44,10 @@ is on real PyPI it resolves from a **package-scoped** TestPyPI index declared in
 root `pyproject.toml` (`[[tool.uv.index]]` + `[tool.uv.sources]`). Never export a
 global `UV_EXTRA_INDEX_URL` — a blanket TestPyPI index makes uv pull the sdist-only
 TestPyPI `psycopg2-binary`, which fails to compile on clean systems.
+
+## Merging
+
+LLMs must never merge a PR to main in this repo (no `gh pr merge`, and never
+`--admin` to bypass branch protection). Open the PR, report it ready, and stop —
+the owner merges. Release steps gated on "after the PR merges" (e.g. real-PyPI
+publish tags) resume only after the owner confirms the merge.
