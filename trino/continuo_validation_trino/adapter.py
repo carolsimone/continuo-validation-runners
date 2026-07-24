@@ -110,6 +110,7 @@ class TrinoAdapter(WarehouseAdapter):
 
     def build_empty_from_sql(self, schema: str, table: str, compiled_sql: str) -> None:
         """Create ``schema.table`` empty, shaped by the compiled SELECT."""
+        logger.info(f"⏳ building empty table: {table}")
         # Strip any trailing terminator so the SELECT nests cleanly inside AS ( ... ).
         inner = compiled_sql.strip().rstrip(";").strip()
         ref = self._table_ref(schema, table)
@@ -118,6 +119,7 @@ class TrinoAdapter(WarehouseAdapter):
 
     def clone_empty_from_prod(self, candidate_schema: str, prod_schema: str, table: str) -> None:
         """Create ``candidate_schema.table`` empty, shaped like ``prod_schema.table``."""
+        logger.info(f"⏳ cloning to candidate schema named: {candidate_schema} the production table: {prod_schema}.{table}")
         ref = self._table_ref(candidate_schema, table)
         self._execute(f"DROP TABLE IF EXISTS {ref}")
         self._execute(
